@@ -3,6 +3,7 @@ import logging
 import os
 import sys
 import pandas as pd
+from typing import Tuple, List, Dict
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import warnings
@@ -89,7 +90,7 @@ def evaluate_strategy(
     evaluator_embeddings,
     reranker: bool = False,
     hybrid_search: bool = False,
-) -> pd.DataFrame:
+) -> Tuple[pd.DataFrame, List[Dict]]:
     """Esegue ingestion + query + RAGAS evaluation per una singola configurazione.
     
     Nota: split evaluation per task:
@@ -206,59 +207,114 @@ def evaluate_strategy(
         df["n_text_questions"] = len(text_results)
         df["n_excel_questions"] = len(excel_results)
 
-    return df
+    return df, results
 
 
-def print_comparison(all_results: pd.DataFrame, gold_data: list):
-    """Stampa tabella comparativa tra strategie."""
-    exclude_cols = ["strategy", "n_chunks", "user_input", "response", "retrieved_contexts", "reference", "duration"]
+def print_comparison(all_results: pd.DataFrame, gold_data: list, raw_results_by_strategy: dict):
+    """Stampa tabella comparativa tra strategie + dettaglio Q/A per la migliore config per task."""
+    if all_results.empty:
+        print("\nNessun risultato da mostrare.")
+        return
+
+    exclude_cols = {
+        "strategy", "task", "n_chunks", "duration",
+        "user_input", "response", "retrieved_contexts", "reference",
+        "n_text_questions", "n_excel_questions",
+        "scope", "routed_to"
+    }
     metric_cols = [c for c in all_results.columns if c not in exclude_cols]
 
-    # --- Tabella riassuntiva ---
     print("\n" + "=" * 90)
     print("  CONFRONTO CONFIGURAZIONI (Performance)")
     print("=" * 90)
 
-    summary = all_results.groupby("strategy").agg(
-        n_chunks=("n_chunks", "first"),
-        duration=("duration", "mean"),
-        **{col: (col, "mean") for col in metric_cols}
-    ).round(3)
+    for task in ["text", "excel"]:
+        task_df = all_results[all_results.get("task") == task] if "task" in all_results.columns else pd.DataFrame()
+        if task_df.empty:
+            print(f"\nNessun risultato per task: {task}")
+            continue
 
-    # Ordina per Answer Relevancy
-    if "answer_relevancy" in summary.columns:
-        summary = summary.sort_values("answer_relevancy", ascending=False)
+        print("\n" + "-" * 90)
+        print(f"  TASK: {task.upper()}")
+        print("-" * 90)
 
-    print(f"\n{'Configurazione':<45} {'Sec':>6} {'Chunks':>6}", end="")
-    for col in metric_cols:
-        print(f"  {col:>18}", end="")
-    print()
-    print("─" * (60 + 20 * len(metric_cols)))
+        # metriche effettivamente presenti (no NaN-only)
+        task_metric_cols = [c for c in metric_cols if c in task_df.columns and task_df[c].notna().any()]
 
-    for strategy_name, row in summary.iterrows():
-        print(f"{strategy_name:<45} {row['duration']:>6.1f} {int(row['n_chunks']):>6}", end="")
-        for col in metric_cols:
-            val = row[col]
-            print(f"  {val:.3f}", end="")
+        summary = task_df.groupby("strategy").agg(
+            n_chunks=("n_chunks", "first"),
+            duration=("duration", "mean"),
+            **{col: (col, "mean") for col in task_metric_cols},
+        ).round(3)
+
+        if "answer_relevancy" in summary.columns:
+            summary = summary.sort_values("answer_relevancy", ascending=False)
+        elif "faithfulness" in summary.columns:
+            summary = summary.sort_values("faithfulness", ascending=False)
+
+        # tabella
+        print(f"\n{'Configurazione':<45} {'Sec':>6} {'Chunks':>6}", end="")
+        for col in task_metric_cols:
+            print(f"  {col:>18}", end="")
         print()
-    
-    # --- Dettaglio Migliore Configurazione ---
-    best_strategy = summary.index[0]
-    print(f"\n{'─' * 80}")
-    print(f"  MIGLIORE CONFIGURAZIONE: {best_strategy}")
-    print(f"{'─' * 80}")
+        print("─" * (60 + 20 * len(task_metric_cols)))
 
-    # Filtra i risultati per la strategia migliore
-    best_results = all_results[all_results["strategy"] == best_strategy]
+        for strategy_name, row in summary.iterrows():
+            print(f"{strategy_name:<45} {row['duration']:>6.1f} {int(row['n_chunks']):>6}", end="")
+            for col in task_metric_cols:
+                val = row[col]
+                if pd.isna(val):
+                    print(f"  {'-':>18}", end="")
+                else:
+                    print(f"  {val:.3f}".rjust(20), end="")
+            print()
 
-    for i, item in enumerate(gold_data):
-        q = item["question"]
-        row = best_results[best_results["user_input"] == q].iloc[0]
-        
-        print(f"\n  Q{i+1}: {q}")
-        print(f"     Attesa:   {item['ground_truth']}")
-        print(f"     Sistema:  {row['response']}")
-        print("-" * 40)
+        # migliore per il task
+        best_strategy = summary.index[0]
+        print("\n" + "─" * 80)
+        print(f"  MIGLIORE CONFIGURAZIONE ({task.upper()}): {best_strategy}")
+        print("─" * 80)
+
+        # stampa metriche best
+        best_row = summary.loc[best_strategy]
+        for col in task_metric_cols:
+            val = best_row[col]
+            if not pd.isna(val):
+                print(f"  {col}: {val:.3f}")
+
+        # dettaglio Q/A dalla pipeline (raw results)
+        raw = raw_results_by_strategy.get(best_strategy, [])
+        if not raw:
+            print("\n  Dettaglio Q/A non disponibile (raw results mancanti).")
+            continue
+
+        # filtra solo le domande del task
+        raw_task = [r for r in raw if r.get("routed_to") == task]
+        if not raw_task:
+            print("\n  Nessuna domanda instradata a questo task per la migliore configurazione.")
+            continue
+
+        print("\n  DETTAGLIO DOMANDE (migliore configurazione)")
+        for i, r in enumerate(raw_task, start=1):
+            q = r.get("question", "")
+            gt = r.get("ground_truth", "")
+            ans = r.get("answer", "")
+            scope = r.get("scope")
+
+            print(f"\n  Q{i}: {q}")
+            if task == "excel" and scope:
+                print(f"     Scope: {scope}")
+            print(f"     Attesa:  {gt}")
+            print(f"     Sistema: {ans}")
+
+            # opzionale: per Excel stampa anche un estratto del contesto (pandas instruction)
+            if task == "excel":
+                ctx = r.get("contexts", []) or []
+                # stampa al massimo 2 blocchi per non esplodere output
+                for c in ctx[:2]:
+                    # accorcia
+                    c_short = c if len(c) <= 600 else c[:600] + "..."
+                    print(f"     Context: {c_short}")
 
 
 def main():
@@ -297,21 +353,26 @@ def main():
     configs.append((SemanticChunkingStrategy(), "SemanticChunking", False, True))    # Hybrid
     configs.append((SemanticChunkingStrategy(), "SemanticChunking", True, True))     # Hybrid + Reranker
 
-    # Esegui evaluation per ogni configurazione
+    # 3. Esegue evaluation per ogni configurazione
     all_dfs = []
+    raw_results_by_strategy = {}
+
     for strategy, name, use_reranker, use_hybrid in configs:
-        df = evaluate_strategy(
-            strategy, name, gold_data, evaluator_llm, evaluator_embeddings, 
-            reranker=use_reranker, 
+        df, raw_results = evaluate_strategy(
+            strategy, name, gold_data, evaluator_llm, evaluator_embeddings,
+            reranker=use_reranker,
             hybrid_search=use_hybrid
         )
         all_dfs.append(df)
 
-    # Combina e confronta
-    all_results = pd.concat(all_dfs, ignore_index=True)
-    print_comparison(all_results, gold_data)
+        label = df["strategy"].iloc[0] if not df.empty else f"{name}"
+        raw_results_by_strategy[label] = raw_results
 
-    # Salva risultati
+    # 4. Combina e confronta
+    all_results = pd.concat(all_dfs, ignore_index=True)
+    print_comparison(all_results, gold_data, raw_results_by_strategy)
+
+    # 5. Salva risultati
     output_path = os.path.join(SCRIPT_DIR, "results_comparison.csv")
     all_results.to_csv(output_path, index=False)
     print(f"\nRisultati salvati in: {output_path}")
