@@ -1,0 +1,54 @@
+[
+  {
+    "question": "Qual è l'obiettivo principale della Direttiva UE 2024/77?",
+    "ground_truth": "La Direttiva stabilisce regole armonizzate per la trasparenza algoritmica e la governance dei dati finanziari, con l'obiettivo di mitigare i rischi derivanti dall'uso di sistemi di IA nel settore della consulenza finanziaria e della compliance aziendale."
+  },
+  {
+    "question": "Entro quando le aziende devono adeguare i propri sistemi IT secondo il regolamento?",
+    "ground_truth": "Le aziende devono adeguare i propri sistemi IT entro il 15 Agosto 2024."
+  },
+  {
+    "question": "Per quanti anni devono essere conservati i log di accesso ai dati sensibili?",
+    "ground_truth": "I log di accesso ai dati sensibili devono essere conservati per un periodo non inferiore a 5 anni."
+  },
+  {
+    "question": "Quali sanzioni sono previste per la violazione degli obblighi di audit trimestrale?",
+    "ground_truth": "Le violazioni sono soggette a sanzioni amministrative pecuniarie fino a 200.000 EUR o, per le imprese, fino al 4% del fatturato mondiale totale annuo dell'esercizio precedente, se superiore."
+  },
+  {
+    "question": "Chi ha partecipato alla riunione del Consiglio di Amministrazione del 20 luglio 2024?",
+    "ground_truth": "Alla riunione hanno partecipato il Dott. Marco Rossi (CEO), la Dott.ssa Giulia Bianchi (CFO), l'Ing. Luca Verdi (CTO), l'Avv. Elena Neri (Head of Legal & Compliance) e la Dott.ssa Sara Costa (Segretario verbalizzante)."
+  },
+  {
+    "question": "Perché il CdA ha deciso di rinviare l'aggiornamento dei sistemi di governance dati?",
+    "ground_truth": "Il CdA ha approvato il rinvio a Settembre 2024 perché il team IT era sottodimensionato a causa delle ferie estive, il budget per le consulenze esterne del Q3 era già stato allocato, e la CFO ha sostenuto che il rischio di un controllo immediato ad agosto era statisticamente basso."
+  },
+  {
+    "question": "Quanto costerebbe la consulenza esterna necessaria per completare l'audit entro agosto?",
+    "ground_truth": "La consulenza esterna per completare l'audit entro agosto è stata stimata in 50.000€."
+  },
+  {
+    "question": "Entro quando deve essere nominato il Data Ethics Officer?",
+    "ground_truth": "La nomina del Data Ethics Officer deve essere notificata alle autorità competenti entro il 1 Settembre 2024. Il CdA ha demandato all'HR l'apertura della posizione a partire dal 1° Ottobre."
+  },
+  {
+    "question": "Qual è la variazione percentuale dell'Utile Netto tra Q3 2023 e Q3 2024?",
+    "ground_truth": "L'Utile Netto è diminuito del 25% (da 240.000€ nel Q3 2023 a 180.000€ nel Q3 2024), con un calo dovuto ad accantonamenti straordinari."
+  },
+  {
+    "question": "Qual è il ricavo totale delle licenze software nel Q3 2024?",
+    "ground_truth": "Il ricavo totale delle licenze software nel Q3 2024 è di 630.000€."
+  },
+  {
+    "question": "Qual è la causa del calo dell'EBITDA nel Q3 2024 rispetto al Q3 2023?",
+    "ground_truth": "L'EBITDA è calato dell'8.5% (da 350.000€ a 320.000€) a causa dell'impatto una tantum di una sanzione di compliance."
+  },
+  {
+    "question": "In quale mese del Q3 2024 i Ricavi da Formazione sono stati più bassi e perché?",
+    "ground_truth": "I Ricavi da Formazione sono stati più bassi ad Agosto 2024 (20.000€), a causa della stagionalità estiva."
+  },
+  {
+    "question": "Qual è l'importo della sanzione GDPR pagata nel Q3 2024?",
+    "ground_truth": "La sanzione GDPR è registrata nei costi Legale & Compliance. L'importo totale dei costi Legale & Compliance nel Q3 è di 90.000€, con un'anomalia registrata ad Agosto (65.000€) descritta come 'Sanzione GDPR pagata ad Agosto'."
+  }
+]

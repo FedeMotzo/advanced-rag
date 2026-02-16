@@ -1,0 +1,34 @@
+# --- LangChain ---
+langchain-core
+langchain-community
+langchain-text-splitters
+langchain-openai
+langchain-chroma
+
+# --- LlamaIndex for Excel ---
+llama-index
+llama-index-core
+llama-index-experimental  
+llama-index-llms-openai   
+llama-index-embeddings-openai
+polars
+dirtyjson                 
+
+# --- Vector Database ---
+chromadb
+
+# --- File Handling ---
+pandas
+openpyxl                  
+pypdf                     
+python-docx               
+docx2txt                  
+
+# --- Utilities ---
+python-dotenv
+
+# --- Evaluation ---
+ragas
+langchain-experimental
+sentence-transformers
+rank-bm25
