@@ -43,10 +43,10 @@ class RAGQueryEngine:
         self.hybrid_search = hybrid_search
         self.fetch_multiplier = fetch_multiplier
 
-        # BM25 retriever (inizializzato lazy al primo uso)
+        # BM25 retriever
         self._bm25_retriever = None
 
-        # Cross-encoder (solo se richiesto)
+        # Cross-encoder
         self._cross_encoder = None
         if self.reranker_enabled:
             from sentence_transformers import CrossEncoder

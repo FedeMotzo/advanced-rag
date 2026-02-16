@@ -149,8 +149,7 @@ class RAGOrchestrator:
             stats["excel_scopes"] = self.excel_engine.list_scopes()
         return stats
 
-
-# --- BLOCCO DI TEST ---
+# TEST
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
