@@ -46,6 +46,7 @@ class ExcelQueryEngine:
         Settings.embed_model = self.embed_model
 
         self.engines: Dict[str, PandasQueryEngine] = {}
+        self._dfs: Dict[str, pd.DataFrame] = {}
         logger.info("ExcelQueryEngine pronto.")
 
     def register_sheet(
@@ -68,26 +69,43 @@ class ExcelQueryEngine:
             kwargs["instruction_str"] = instruction
 
         self.engines[name] = PandasQueryEngine(**kwargs)
+        self._dfs[name] = df
         logger.info(f"  Registrato foglio '{name}' ({len(df)} righe)")
 
     def ask(self, question: str, scope: str) -> Dict:
-        """
-        Interroga un foglio registrato.
-        """
         if scope not in self.engines:
             available = ", ".join(self.engines.keys()) or "nessuno"
-            return {"answer": f"Ambito '{scope}' non trovato. Disponibili: {available}", "scope": scope}
+            return {
+                "answer": f"Ambito '{scope}' non trovato. Disponibili: {available}",
+                "scope": scope,
+                "contexts": [],
+            }
 
         try:
-            response = self.engines[scope].query(question)
-            ans_str = str(response)
-            # RAGAS ha bisogno di una lista di stringhe come contesto.
-            # Qui usiamo la risposta stessa (spesso contiene i dati grezzi o semi-elaborati)
-            return {
-                "answer": ans_str,
-                "scope": scope,
-                "contexts": [ans_str]
-            }
+            engine = self.engines[scope]
+            response = engine.query(question)
+
+            ans_str = getattr(response, "response", None) or str(response)
+
+            contexts = [f"SCOPE: {scope}"]
+
+            # 1) Schema da DF 
+            df = self._dfs.get(scope)
+            if df is not None:
+                cols = list(df.columns)[:50]
+                dtypes = {c: str(df[c].dtype) for c in cols}
+                contexts.append(f"SCHEMA: columns={cols} dtypes={dtypes}")
+
+            # 2) Istruzioni Pandas generate
+            md = getattr(response, "metadata", None) or {}
+            instr = md.get("pandas_instruction_str") or md.get("instruction_str") or md.get("pandas_code")
+            if instr:
+                contexts.append(f"PANDAS_INSTRUCTION:\n{instr}")
+
+            contexts.append(f"ENGINE_OUTPUT:\n{ans_str[:1500]}")
+
+            return {"answer": ans_str, "scope": scope, "contexts": contexts}
+
         except Exception as e:
             logger.error(f"Errore query Excel ({scope}): {e}")
             return {"answer": "Errore nell'elaborazione della query.", "scope": scope, "contexts": []}

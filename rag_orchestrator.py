@@ -105,39 +105,31 @@ class RAGOrchestrator:
             return 0
 
     def ask(self, question: str, source: str = "auto", **kwargs) -> dict:
-        """
-        Interroga il sistema.
-
-        Args:
-            question: La domanda dell'utente.
-            source: "auto" (classificazione LLM), "text", o "excel".
-            **kwargs: Argomenti aggiuntivi (k, scope, ecc.).
-
-        Returns:
-            {"answer": str, "sources": list, "routed_to": str}
-        """
-        # Auto-routing con LLM intent classifier
         if source == "auto":
             scopes = self._scope_registry if self._scope_registry else None
             source, auto_scope = self.intent_router.classify(question, available_scopes=scopes)
             if auto_scope and "scope" not in kwargs:
                 kwargs["scope"] = auto_scope
-            logger.info(f"Intent Router: '{question[:50]}...' → {source}:{kwargs.get('scope', 'N/A')}")
 
         if source == "text":
             result = self.rag_engine.ask(question, k=kwargs.get("k", 4))
             result["routed_to"] = "text"
+
+            if "contexts" not in result:
+                result["contexts"] = result.get("sources", []) or []
             return result
 
         elif source == "excel":
             if self.excel_engine is None:
-                return {"answer": "Nessun file Excel caricato.", "scope": "N/A", "routed_to": "excel"}
+                return {"answer": "Nessun file Excel caricato.", "contexts": [], "scope": "N/A", "routed_to": "excel"}
+
             result = self.excel_engine.ask(question, scope=kwargs.get("scope", "pnl"))
             result["routed_to"] = "excel"
+            result.setdefault("scope", kwargs.get("scope", "pnl"))
+            result.setdefault("contexts", [])
             return result
 
-        else:
-            return {"answer": f"Sorgente '{source}' non supportata.", "sources": [], "routed_to": source}
+        return {"answer": f"Sorgente '{source}' non supportata.", "contexts": [], "routed_to": source}
 
     @staticmethod
     def _file_slug(file_path: str) -> str:

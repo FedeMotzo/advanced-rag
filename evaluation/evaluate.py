@@ -59,6 +59,8 @@ def run_pipeline(orchestrator: RAGOrchestrator, questions: list) -> list:
             "answer": result["answer"],
             "contexts": result.get("contexts", []),
             "ground_truth": item["ground_truth"],
+            "routed_to": result.get("routed_to", "unknown"),
+            "scope": result.get("scope"),
         })
     return results
 
@@ -79,79 +81,131 @@ def build_ragas_dataset(results: list) -> EvaluationDataset:
 import time
 
 
-def evaluate_strategy(strategy, strategy_name: str, gold_data: list, evaluator_llm, evaluator_embeddings, reranker: bool = False, hybrid_search: bool = False) -> pd.DataFrame:
-    """Esegue ingestion + query + RAGAS evaluation per una singola configurazione."""
+def evaluate_strategy(
+    strategy,
+    strategy_name: str,
+    gold_data: list,
+    evaluator_llm,
+    evaluator_embeddings,
+    reranker: bool = False,
+    hybrid_search: bool = False,
+) -> pd.DataFrame:
+    """Esegue ingestion + query + RAGAS evaluation per una singola configurazione.
+    
+    Nota: split evaluation per task:
+      - TEXT: faithfulness, answer_relevancy, context_precision, context_recall
+      - EXCEL: answer_relevancy, faithfulness (niente context_* perché non c'è retrieval)
+    """
     retrieval_mode = "HybridRetrieve" if hybrid_search else "SemanticRetrieve"
     rerank_label = " + Reranker" if reranker else ""
     label = f"{strategy_name} + {retrieval_mode}{rerank_label}".strip()
-    
+
     print(f"\n{'─' * 50}")
     print(f"  Config: {label}")
     print(f"{'─' * 50}")
 
     start_time = time.time()
 
-    # 1. Setup orchestrator con collection specifica per strategia di chunking
+    # 1) Setup orchestrator con collection specifica per strategia di chunking
     collection_name = f"datatrust_docs_{strategy_name.lower()}"
     db_manager = VectorStoreManager(collection_name=collection_name)
-    
+
     orchestrator = RAGOrchestrator(
-        db_manager=db_manager, 
-        chunking_strategy=strategy, 
+        db_manager=db_manager,
+        chunking_strategy=strategy,
         reranker=reranker,
-        hybrid_search=hybrid_search
+        hybrid_search=hybrid_search,
     )
 
-    # 2. Ingestion (solo se la collection è vuota)
+    # 2) Ingestion
     text_files = [f for f in DOC_FILES if not f.endswith((".xlsx", ".xls"))]
     excel_files = [f for f in DOC_FILES if f.endswith((".xlsx", ".xls"))]
 
-    # 2a. Ingestion Testo (solo se la collection è vuota)
+    # 2a) Ingestion Testo (solo se collection vuota)
     n_chunks = db_manager.count()
     if n_chunks == 0:
-        print(f"Ingestion documenti testo (collection vuota)...")
+        print("Ingestion documenti testo (collection vuota)...")
         for f in text_files:
             n_chunks += orchestrator.ingest(f)
         print(f"Chunks testo creati: {n_chunks}")
     else:
         print(f"Riutilizzo chunks testo esistenti: {n_chunks}")
 
-    # 2b. Ingestion Excel (SEMPRE necessaria perché in-memory)
+    # 2b) Ingestion Excel (sempre, perché in-memory)
     if excel_files:
-        print(f"  Caricamento file Excel (in-memory)...")
+        print("Caricamento file Excel (in-memory)...")
         for f in excel_files:
             orchestrator.ingest(f)
         if orchestrator.excel_engine:
             scopes = orchestrator.excel_engine.list_scopes()
             print(f"Scopes Excel registrati: {scopes}")
 
-
-    # 3. Query
-    print(f" Esecuzione pipeline RAG...")
+    # 3) Query
+    print("Esecuzione pipeline RAG...")
     results = run_pipeline(orchestrator, gold_data)
 
-    # 4. RAGAS evaluation
-    print(f"Valutazione RAGAS...")
-    eval_dataset = build_ragas_dataset(results)
-    metrics = [faithfulness, answer_relevancy, context_precision, context_recall]
+    # 4) Split risultati per task (text vs excel)
+    text_results = [r for r in results if r.get("routed_to") == "text"]
+    excel_results = [r for r in results if r.get("routed_to") == "excel"]
 
-    score = evaluate(
-        dataset=eval_dataset,
-        metrics=metrics,
-        llm=evaluator_llm,
-        embeddings=evaluator_embeddings,
-        run_config=RunConfig(max_workers=4)
-    )
+    print("Valutazione RAGAS...")
+    dfs = []
+
+    # 4a) TEXT-RAG evaluation (retrieval-based)
+    if text_results:
+        text_dataset = build_ragas_dataset(text_results)
+        text_metrics = [faithfulness, answer_relevancy, context_precision, context_recall]
+
+        text_score = evaluate(
+            dataset=text_dataset,
+            metrics=text_metrics,
+            llm=evaluator_llm,
+            embeddings=evaluator_embeddings,
+            run_config=RunConfig(max_workers=4),
+        )
+        df_text = text_score.to_pandas()
+        df_text["task"] = "text"
+        dfs.append(df_text)
+
+    # 4b) EXCEL evaluation (no retrieval metrics)
+    if excel_results:
+        excel_dataset = build_ragas_dataset(excel_results)
+        excel_metrics = [answer_relevancy, faithfulness]
+
+        excel_score = evaluate(
+            dataset=excel_dataset,
+            metrics=excel_metrics,
+            llm=evaluator_llm,
+            embeddings=evaluator_embeddings,
+            run_config=RunConfig(max_workers=4),
+        )
+        df_excel = excel_score.to_pandas()
+        df_excel["task"] = "excel"
+
+        # Uniforma colonne nel caso tu voglia un CSV unico
+        for col in ("context_precision", "context_recall"):
+            if col not in df_excel.columns:
+                df_excel[col] = pd.NA
+
+        dfs.append(df_excel)
+
+    # Se nessun risultato (caso limite)
+    df = pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
     end_time = time.time()
     duration = end_time - start_time
-
     print(f"Tempo: {duration:.2f}s")
 
-    df = score.to_pandas()
-    df.insert(0, "strategy", label)
-    df.insert(1, "n_chunks", n_chunks)
-    df["duration"] = duration
+    # Metadata configurazione
+    if not df.empty:
+        df.insert(0, "strategy", label)
+        df.insert(1, "n_chunks", n_chunks)
+        df["duration"] = duration
+
+        # utile per debug/report
+        df["n_text_questions"] = len(text_results)
+        df["n_excel_questions"] = len(excel_results)
+
     return df
 
 
